@@ -1368,6 +1368,15 @@ input.inline-edit:focus {
   border-radius: 6px;
 }
 
+.graph-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .graph-empty {
   padding: var(--space-8);
 }

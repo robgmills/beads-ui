@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { createSubscriptionIssueStore } from '../data/subscription-issue-store.js';
+import { createStore } from '../state.js';
 import { buildGraphModel, createGraphView } from './graph.js';
 
 function createTestIssueStores() {
@@ -188,5 +189,112 @@ describe('views/graph', () => {
       ?.getAttribute('transform');
     expect(after).not.toBe(before);
     expect(after).toContain('scale(1.2)');
+  });
+
+  test('renders closed issues when graph preference is enabled', async () => {
+    document.body.innerHTML = '<div id="m"></div>';
+    const mount = /** @type {HTMLElement} */ (document.getElementById('m'));
+    const issueStores = createTestIssueStores();
+    issueStores.getStore('tab:graph').applyPush({
+      type: 'snapshot',
+      id: 'tab:graph',
+      revision: 1,
+      issues: [
+        { id: 'UI-1', title: 'Open', status: 'open' },
+        { id: 'UI-2', title: 'Closed', status: 'closed' }
+      ]
+    });
+    const store = createStore({ graph: { show_closed: true } });
+    const view = createGraphView(mount, () => {}, issueStores, store);
+
+    await view.load();
+
+    expect(mount.querySelectorAll('.graph-node').length).toBe(2);
+    expect(mount.textContent).toContain('UI-2');
+  });
+
+  test('hides closed issues when graph preference is disabled', async () => {
+    document.body.innerHTML = '<div id="m"></div>';
+    const mount = /** @type {HTMLElement} */ (document.getElementById('m'));
+    const issueStores = createTestIssueStores();
+    issueStores.getStore('tab:graph').applyPush({
+      type: 'snapshot',
+      id: 'tab:graph',
+      revision: 1,
+      issues: [
+        { id: 'UI-1', title: 'Open', status: 'open' },
+        { id: 'UI-2', title: 'Closed', status: 'closed' }
+      ]
+    });
+    const store = createStore({ graph: { show_closed: false } });
+    const view = createGraphView(mount, () => {}, issueStores, store);
+
+    await view.load();
+
+    expect(mount.querySelectorAll('.graph-node').length).toBe(1);
+    expect(mount.textContent).toContain('UI-1');
+    expect(mount.textContent).not.toContain('UI-2');
+  });
+
+  test('removes edges connected to hidden closed issues', async () => {
+    document.body.innerHTML = '<div id="m"></div>';
+    const mount = /** @type {HTMLElement} */ (document.getElementById('m'));
+    const issueStores = createTestIssueStores();
+    issueStores.getStore('tab:graph').applyPush({
+      type: 'snapshot',
+      id: 'tab:graph',
+      revision: 1,
+      issues: [
+        { id: 'UI-1', title: 'Open', status: 'open' },
+        {
+          id: 'UI-2',
+          title: 'Closed',
+          status: 'closed',
+          dependencies: [
+            {
+              issue_id: 'UI-2',
+              depends_on_id: 'UI-1',
+              type: 'blocks'
+            }
+          ]
+        }
+      ]
+    });
+    const store = createStore({ graph: { show_closed: false } });
+    const view = createGraphView(mount, () => {}, issueStores, store);
+
+    await view.load();
+
+    expect(mount.querySelectorAll('.graph-edge').length).toBe(0);
+  });
+
+  test('updates graph preference when toggling closed issues', async () => {
+    document.body.innerHTML = '<div id="m"></div>';
+    const mount = /** @type {HTMLElement} */ (document.getElementById('m'));
+    const issueStores = createTestIssueStores();
+    issueStores.getStore('tab:graph').applyPush({
+      type: 'snapshot',
+      id: 'tab:graph',
+      revision: 1,
+      issues: [
+        { id: 'UI-1', title: 'Open', status: 'open' },
+        { id: 'UI-2', title: 'Closed', status: 'closed' }
+      ]
+    });
+    const store = createStore({ graph: { show_closed: true } });
+    const view = createGraphView(mount, () => {}, issueStores, store);
+    await view.load();
+
+    const input = /** @type {HTMLInputElement | null} */ (
+      mount.querySelector('.graph-toggle input')
+    );
+    if (input) {
+      input.checked = false;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    expect(store.getState().graph.show_closed).toBe(false);
+    expect(mount.querySelectorAll('.graph-node').length).toBe(1);
+    expect(mount.textContent).not.toContain('UI-2');
   });
 });

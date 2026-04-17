@@ -42,26 +42,39 @@ const MAX_SCALE = 2.5;
  * @param {HTMLElement} mount_element
  * @param {(id: string) => void} gotoIssue
  * @param {{ snapshotFor?: (client_id: string) => GraphIssue[], subscribe?: (fn: () => void) => () => void }} [issue_stores]
+ * @param {{ getState?: () => { graph?: { show_closed?: boolean } }, setState?: (patch: { graph?: { show_closed?: boolean } }) => void, subscribe?: (fn: (state: unknown) => void) => () => void }} [store]
  * @returns {{ load: () => Promise<void>, clear: () => void, destroy: () => void }}
  */
 export function createGraphView(
   mount_element,
   gotoIssue,
-  issue_stores = undefined
+  issue_stores = undefined,
+  store = undefined
 ) {
   const log = debug('views:graph');
   /** @type {GraphModel} */
   let model = buildGraphModel([]);
+  /** @type {GraphIssue[]} */
+  let raw_issues = [];
   /** @type {{ x: number, y: number, scale: number }} */
   let transform_state = { x: 24, y: 24, scale: 1 };
   /** @type {{ pointer_id: number, start_x: number, start_y: number, origin_x: number, origin_y: number } | null} */
   let active_pan = null;
+  let local_show_closed = true;
   /** @type {null | (() => void)} */
-  let unsubscribe = null;
+  let unsubscribe_issues = null;
+  /** @type {null | (() => void)} */
+  let unsubscribe_store = null;
 
   if (issue_stores && typeof issue_stores.subscribe === 'function') {
-    unsubscribe = issue_stores.subscribe(() => {
+    unsubscribe_issues = issue_stores.subscribe(() => {
       refreshFromStore();
+    });
+  }
+  if (store && typeof store.subscribe === 'function') {
+    unsubscribe_store = store.subscribe(() => {
+      rebuildModel();
+      doRender();
     });
   }
 
@@ -78,6 +91,7 @@ export function createGraphView(
   function template() {
     const issue_count = model.nodes.length;
     const edge_count = model.edges.length;
+    const show_closed = getShowClosed();
     return html`
       <div class="graph-root">
         <div class="graph-toolbar" aria-label="Graph controls">
@@ -87,6 +101,14 @@ export function createGraphView(
             <span class="muted">${edge_count} links</span>
           </div>
           <div class="graph-toolbar__actions">
+            <label class="graph-toggle">
+              <input
+                type="checkbox"
+                .checked=${show_closed}
+                @change=${onShowClosedChange}
+              />
+              <span>Show closed</span>
+            </label>
             <button type="button" @click=${zoomIn}>Zoom in</button>
             <button type="button" @click=${zoomOut}>Zoom out</button>
             <button type="button" @click=${resetView}>Reset</button>
@@ -313,17 +335,50 @@ export function createGraphView(
 
   function refreshFromStore() {
     try {
-      const issues =
+      raw_issues =
         issue_stores && typeof issue_stores.snapshotFor === 'function'
           ? issue_stores.snapshotFor('tab:graph')
           : [];
-      model = buildGraphModel(issues);
+      rebuildModel();
       doRender();
     } catch (err) {
       log('refresh failed: %o', err);
+      raw_issues = [];
       model = buildGraphModel([]);
       doRender();
     }
+  }
+
+  function rebuildModel() {
+    model = buildGraphModel(filterClosedIssues(raw_issues, getShowClosed()));
+  }
+
+  /**
+   * @returns {boolean}
+   */
+  function getShowClosed() {
+    const state =
+      store && typeof store.getState === 'function'
+        ? store.getState()
+        : undefined;
+    return typeof state?.graph?.show_closed === 'boolean'
+      ? state.graph.show_closed
+      : local_show_closed;
+  }
+
+  /**
+   * @param {Event} ev
+   */
+  function onShowClosedChange(ev) {
+    const target = /** @type {HTMLInputElement | null} */ (ev.target);
+    const show_closed = Boolean(target?.checked);
+    if (store && typeof store.setState === 'function') {
+      store.setState({ graph: { show_closed } });
+      return;
+    }
+    local_show_closed = show_closed;
+    rebuildModel();
+    doRender();
   }
 
   return {
@@ -331,13 +386,18 @@ export function createGraphView(
       refreshFromStore();
     },
     clear() {
+      raw_issues = [];
       model = buildGraphModel([]);
       render(html``, mount_element);
     },
     destroy() {
-      if (unsubscribe) {
-        unsubscribe();
-        unsubscribe = null;
+      if (unsubscribe_issues) {
+        unsubscribe_issues();
+        unsubscribe_issues = null;
+      }
+      if (unsubscribe_store) {
+        unsubscribe_store();
+        unsubscribe_store = null;
       }
       render(html``, mount_element);
     }
@@ -450,6 +510,18 @@ export function buildGraphModel(issues) {
       NODE_HEIGHT +
       Math.max(0, max_layer_size - 1) * ROW_GAP
   };
+}
+
+/**
+ * @param {GraphIssue[]} issues
+ * @param {boolean} show_closed
+ * @returns {GraphIssue[]}
+ */
+function filterClosedIssues(issues, show_closed) {
+  if (show_closed) {
+    return issues.slice();
+  }
+  return issues.filter((issue) => String(issue.status || 'open') !== 'closed');
 }
 
 /**

@@ -24,6 +24,10 @@ import { debug } from './utils/logging.js';
  */
 
 /**
+ * @typedef {{ show_closed: boolean }} GraphState
+ */
+
+/**
  * @typedef {Object} WorkspaceInfo
  * @property {string} path - Full path to workspace
  * @property {string} database - Path to the database file
@@ -38,14 +42,14 @@ import { debug } from './utils/logging.js';
  */
 
 /**
- * @typedef {{ selected_id: string | null, view: ViewName, filters: Filters, board: BoardState, workspace: WorkspaceState }} AppState
+ * @typedef {{ selected_id: string | null, view: ViewName, filters: Filters, board: BoardState, graph: GraphState, workspace: WorkspaceState }} AppState
  */
 
 /**
  * Create a simple store for application state.
  *
  * @param {Partial<AppState>} [initial]
- * @returns {{ getState: () => AppState, setState: (patch: { selected_id?: string | null, filters?: Partial<Filters>, workspace?: Partial<WorkspaceState> }) => void, subscribe: (fn: (s: AppState) => void) => () => void }}
+ * @returns {{ getState: () => AppState, setState: (patch: { selected_id?: string | null, filters?: Partial<Filters>, board?: Partial<BoardState>, graph?: Partial<GraphState>, workspace?: Partial<WorkspaceState> }) => void, subscribe: (fn: (s: AppState) => void) => () => void }}
  */
 export function createStore(initial = {}) {
   const log = debug('state');
@@ -66,6 +70,12 @@ export function createStore(initial = {}) {
         initial.board?.closed_filter === 'today'
           ? initial.board?.closed_filter
           : 'today'
+    },
+    graph: {
+      show_closed:
+        typeof initial.graph?.show_closed === 'boolean'
+          ? initial.graph.show_closed
+          : true
     },
     workspace: {
       current: initial.workspace?.current ?? null,
@@ -93,7 +103,7 @@ export function createStore(initial = {}) {
     /**
      * Update state. Nested filters can be partial.
      *
-     * @param {{ selected_id?: string | null, filters?: Partial<Filters>, board?: Partial<BoardState>, workspace?: Partial<WorkspaceState> }} patch
+     * @param {{ selected_id?: string | null, filters?: Partial<Filters>, board?: Partial<BoardState>, graph?: Partial<GraphState>, workspace?: Partial<WorkspaceState> }} patch
      */
     setState(patch) {
       /** @type {AppState} */
@@ -102,6 +112,7 @@ export function createStore(initial = {}) {
         ...patch,
         filters: { ...state.filters, ...(patch.filters || {}) },
         board: { ...state.board, ...(patch.board || {}) },
+        graph: { ...state.graph, ...(patch.graph || {}) },
         workspace: {
           current:
             patch.workspace?.current !== undefined
@@ -124,6 +135,7 @@ export function createStore(initial = {}) {
         next.filters.search === state.filters.search &&
         next.filters.type === state.filters.type &&
         next.board.closed_filter === state.board.closed_filter &&
+        next.graph.show_closed === state.graph.show_closed &&
         !workspace_changed
       ) {
         return;
@@ -134,6 +146,7 @@ export function createStore(initial = {}) {
         view: state.view,
         filters: state.filters,
         board: state.board,
+        graph: state.graph,
         workspace: state.workspace.current?.path
       });
       emit();
