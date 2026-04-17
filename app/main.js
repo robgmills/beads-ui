@@ -15,6 +15,7 @@ import { createBoardView } from './views/board.js';
 import { createDetailView } from './views/detail.js';
 import { createEpicsView } from './views/epics.js';
 import { createFatalErrorDialog } from './views/fatal-error-dialog.js';
+import { createGraphView } from './views/graph.js';
 import { createIssueDialog } from './views/issue-dialog.js';
 import { createListView } from './views/list.js';
 import { createTopNav } from './views/nav.js';
@@ -38,6 +39,7 @@ export function bootstrap(root_element) {
     </section>
     <section id="epics-root" class="route epics" hidden></section>
     <section id="board-root" class="route board" hidden></section>
+    <section id="graph-root" class="route graph" hidden></section>
     <section id="detail-panel" class="route detail" hidden></section>
   `;
   render(shell, root_element);
@@ -50,12 +52,21 @@ export function bootstrap(root_element) {
   const epics_root = document.getElementById('epics-root');
   /** @type {HTMLElement|null} */
   const board_root = document.getElementById('board-root');
+  /** @type {HTMLElement|null} */
+  const graph_root = document.getElementById('graph-root');
 
   /** @type {HTMLElement|null} */
   const list_mount = document.getElementById('list-panel');
   /** @type {HTMLElement|null} */
   const detail_mount = document.getElementById('detail-panel');
-  if (list_mount && issues_root && epics_root && board_root && detail_mount) {
+  if (
+    list_mount &&
+    issues_root &&
+    epics_root &&
+    board_root &&
+    graph_root &&
+    detail_mount
+  ) {
     /** @type {HTMLElement|null} */
     const header_loading = document.getElementById('header-loading');
     const activity = createActivityIndicator(header_loading);
@@ -181,6 +192,10 @@ export function bootstrap(root_element) {
         void unsub_board_blocked().catch(() => {});
         unsub_board_blocked = null;
       }
+      if (unsub_graph_tab) {
+        void unsub_graph_tab().catch(() => {});
+        unsub_graph_tab = null;
+      }
       // Clear all subscription stores
       const storeIds = [
         'tab:issues',
@@ -188,7 +203,8 @@ export function bootstrap(root_element) {
         'tab:board:ready',
         'tab:board:in-progress',
         'tab:board:closed',
-        'tab:board:blocked'
+        'tab:board:blocked',
+        'tab:graph'
       ];
       for (const id of storeIds) {
         try {
@@ -382,14 +398,15 @@ export function bootstrap(root_element) {
       log('filters parse error: %o', err);
     }
     // Load last-view from storage
-    /** @type {'issues'|'epics'|'board'} */
+    /** @type {'issues'|'epics'|'board'|'graph'} */
     let last_view = 'issues';
     try {
       const raw_view = window.localStorage.getItem('beads-ui.view');
       if (
         raw_view === 'issues' ||
         raw_view === 'epics' ||
-        raw_view === 'board'
+        raw_view === 'board' ||
+        raw_view === 'graph'
       ) {
         last_view = raw_view;
       }
@@ -519,7 +536,7 @@ export function bootstrap(root_element) {
       const s = store.getState();
       store.setState({ selected_id: null });
       try {
-        /** @type {'issues'|'epics'|'board'} */
+        /** @type {'issues'|'epics'|'board'|'graph'} */
         const v = s.view || 'issues';
         router.gotoView(v);
       } catch {
@@ -641,9 +658,14 @@ export function bootstrap(root_element) {
       sub_issue_stores,
       transport
     );
+    const graph_view = createGraphView(
+      graph_root,
+      (id) => router.gotoIssue(id),
+      sub_issue_stores
+    );
     // Preload epics when switching to view
     /**
-     * @param {{ selected_id: string | null, view: 'issues'|'epics'|'board', filters: any }} s
+     * @param {{ selected_id: string | null, view: 'issues'|'epics'|'board'|'graph', filters: any }} s
      */
     // --- Subscriptions: tab-level management and filter-driven updates ---
     /** @type {null | (() => Promise<void>)} */
@@ -658,6 +680,8 @@ export function bootstrap(root_element) {
     let unsub_board_closed = null;
     /** @type {null | (() => Promise<void>)} */
     let unsub_board_blocked = null;
+    /** @type {null | (() => Promise<void>)} */
+    let unsub_graph_tab = null;
 
     // Track in-flight subscriptions to prevent duplicates during rapid view switching
     /** @type {Set<string>} */
@@ -697,7 +721,7 @@ export function bootstrap(root_element) {
     /**
      * Ensure only the active tab has subscriptions; clean up previous.
      *
-     * @param {{ view: 'issues'|'epics'|'board', filters: any }} s
+     * @param {{ view: 'issues'|'epics'|'board'|'graph', filters: any }} s
      */
     function ensureTabSubscriptions(s) {
       // Issues tab
@@ -773,6 +797,38 @@ export function bootstrap(root_element) {
           sub_issue_stores.unregister('tab:epics');
         } catch (err) {
           log('unregister epics store failed: %o', err);
+        }
+      }
+
+      // Graph tab uses all issues and derives dependency edges client-side.
+      if (s.view === 'graph') {
+        try {
+          sub_issue_stores.register('tab:graph', { type: 'all-issues' });
+        } catch (err) {
+          log('register graph store failed: %o', err);
+        }
+        if (!unsub_graph_tab && !pending_subscriptions.has('tab:graph')) {
+          pending_subscriptions.add('tab:graph');
+          void subscriptions
+            .subscribeList('tab:graph', { type: 'all-issues' })
+            .then((unsub) => {
+              unsub_graph_tab = unsub;
+            })
+            .catch((err) => {
+              log('subscribe graph failed: %o', err);
+              showFatalFromError(err, 'graph');
+            })
+            .finally(() => {
+              pending_subscriptions.delete('tab:graph');
+            });
+        }
+      } else if (unsub_graph_tab) {
+        void unsub_graph_tab().catch(() => {});
+        unsub_graph_tab = null;
+        try {
+          sub_issue_stores.unregister('tab:graph');
+        } catch (err) {
+          log('unregister graph store failed: %o', err);
         }
       }
 
@@ -920,14 +976,21 @@ export function bootstrap(root_element) {
     /**
      * Manage route visibility and list subscriptions per view.
      *
-     * @param {{ selected_id: string | null, view: 'issues'|'epics'|'board', filters: any }} s
+     * @param {{ selected_id: string | null, view: 'issues'|'epics'|'board'|'graph', filters: any }} s
      */
     const onRouteChange = (s) => {
-      if (issues_root && epics_root && board_root && detail_mount) {
+      if (
+        issues_root &&
+        epics_root &&
+        board_root &&
+        graph_root &&
+        detail_mount
+      ) {
         // Underlying route visibility is controlled only by selected view
         issues_root.hidden = s.view !== 'issues';
         epics_root.hidden = s.view !== 'epics';
         board_root.hidden = s.view !== 'board';
+        graph_root.hidden = s.view !== 'graph';
         // detail_mount visibility handled in subscription above
       }
       // Ensure subscriptions for the active tab before loading the view to
@@ -938,6 +1001,9 @@ export function bootstrap(root_element) {
       }
       if (!s.selected_id && s.view === 'board') {
         void board_view.load();
+      }
+      if (!s.selected_id && s.view === 'graph') {
+        void graph_view.load();
       }
       window.localStorage.setItem('beads-ui.view', s.view);
     };
