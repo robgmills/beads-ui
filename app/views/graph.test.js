@@ -132,6 +132,68 @@ describe('views/graph', () => {
     expect(mount.textContent).toContain('Build');
   });
 
+  test('adds issue type classes to graph nodes', async () => {
+    document.body.innerHTML = '<div id="m"></div>';
+    const mount = /** @type {HTMLElement} */ (document.getElementById('m'));
+    const issueStores = createTestIssueStores();
+    issueStores.getStore('tab:graph').applyPush({
+      type: 'snapshot',
+      id: 'tab:graph',
+      revision: 1,
+      issues: [
+        { id: 'UI-1', title: 'Bug', issue_type: 'bug' },
+        { id: 'UI-2', title: 'Feature', issue_type: 'feature' },
+        { id: 'UI-3', title: 'Unknown', issue_type: 'unknown' }
+      ]
+    });
+    const view = createGraphView(mount, () => {}, issueStores);
+
+    await view.load();
+
+    expect(
+      mount
+        .querySelector('[data-issue-id="UI-1"]')
+        ?.classList.contains('graph-node--type-bug')
+    ).toBe(true);
+    expect(
+      mount
+        .querySelector('[data-issue-id="UI-2"]')
+        ?.classList.contains('graph-node--type-feature')
+    ).toBe(true);
+    expect(
+      mount
+        .querySelector('[data-issue-id="UI-3"]')
+        ?.classList.contains('graph-node--type-neutral')
+    ).toBe(true);
+  });
+
+  test('keeps type class on closed graph nodes', async () => {
+    document.body.innerHTML = '<div id="m"></div>';
+    const mount = /** @type {HTMLElement} */ (document.getElementById('m'));
+    const issueStores = createTestIssueStores();
+    issueStores.getStore('tab:graph').applyPush({
+      type: 'snapshot',
+      id: 'tab:graph',
+      revision: 1,
+      issues: [
+        {
+          id: 'UI-1',
+          title: 'Closed task',
+          status: 'closed',
+          issue_type: 'task',
+          closed_at: Date.now()
+        }
+      ]
+    });
+    const view = createGraphView(mount, () => {}, issueStores, createStore());
+
+    await view.load();
+
+    const node = mount.querySelector('[data-issue-id="UI-1"]');
+    expect(node?.classList.contains('graph-node--closed')).toBe(true);
+    expect(node?.classList.contains('graph-node--type-task')).toBe(true);
+  });
+
   test('navigates when activating a node', async () => {
     document.body.innerHTML = '<div id="m"></div>';
     const mount = /** @type {HTMLElement} */ (document.getElementById('m'));

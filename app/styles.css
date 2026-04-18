@@ -1423,11 +1423,51 @@ input.inline-edit:focus {
 
 .graph-node {
   cursor: pointer;
+  --graph-node-base-bg: var(--badge-bg-neutral);
+  --graph-node-base-fg: var(--badge-fg-neutral);
+  --graph-node-bg: var(--graph-node-base-bg);
+  --graph-node-fg: var(--graph-node-base-fg);
+  --graph-node-border: color-mix(
+    in srgb,
+    var(--graph-node-fg) 45%,
+    transparent
+  );
+  --graph-node-meta: color-mix(in srgb, var(--graph-node-fg) 70%, var(--muted));
+}
+
+.graph-node--type-bug {
+  --graph-node-base-bg: var(--badge-bg-bug);
+  --graph-node-base-fg: var(--badge-fg-bug);
+}
+
+.graph-node--type-feature {
+  --graph-node-base-bg: var(--badge-bg-feature);
+  --graph-node-base-fg: var(--badge-fg-feature);
+}
+
+.graph-node--type-task {
+  --graph-node-base-bg: var(--badge-bg-task);
+  --graph-node-base-fg: var(--badge-fg-task);
+}
+
+.graph-node--type-epic {
+  --graph-node-base-bg: var(--badge-bg-epic);
+  --graph-node-base-fg: var(--badge-fg-epic);
+}
+
+.graph-node--type-chore {
+  --graph-node-base-bg: var(--badge-bg-chore);
+  --graph-node-base-fg: var(--badge-fg-chore);
+}
+
+.graph-node--type-neutral {
+  --graph-node-base-bg: var(--badge-bg-neutral);
+  --graph-node-base-fg: var(--badge-fg-neutral);
 }
 
 .graph-node__box {
-  fill: var(--panel-bg);
-  stroke: var(--border);
+  fill: var(--graph-node-bg);
+  stroke: var(--graph-node-border);
   stroke-width: 1.5;
   filter: drop-shadow(0 2px 5px color-mix(in srgb, #000 12%, transparent));
 }
@@ -1443,25 +1483,28 @@ input.inline-edit:focus {
 }
 
 .graph-node__id {
-  fill: var(--fg);
+  fill: var(--graph-node-fg);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 13px;
   font-weight: 700;
 }
 
 .graph-node__title {
-  fill: var(--fg);
+  fill: var(--graph-node-fg);
   font-size: 13px;
   font-weight: 600;
 }
 
 .graph-node__meta {
-  fill: var(--muted);
+  fill: var(--graph-node-meta);
   font-size: 11px;
 }
 
-.graph-node--closed .graph-node__box {
-  opacity: 0.72;
+.graph-node--closed {
+  --graph-node-bg: color-mix(in srgb, var(--graph-node-base-bg) 68%, #000);
+  --graph-node-fg: color-mix(in srgb, var(--graph-node-base-fg) 82%, #fff);
+  --graph-node-border: color-mix(in srgb, var(--graph-node-fg) 58%, #000);
+  --graph-node-meta: color-mix(in srgb, var(--graph-node-fg) 72%, #fff);
 }
 
 /* a11y helper */

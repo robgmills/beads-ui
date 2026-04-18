@@ -213,9 +213,10 @@ export function createGraphView(
   function nodeTemplate(node) {
     const priority =
       typeof node.priority === 'number' ? `P${node.priority}` : 'P?';
+    const issue_type = graphNodeType(node.issue_type);
     return svg`
       <g
-        class="graph-node graph-node--${String(node.status || 'open')}"
+        class="graph-node graph-node--${String(node.status || 'open')} graph-node--type-${issue_type}"
         data-issue-id=${node.id}
         role="button"
         tabindex="0"
@@ -656,4 +657,22 @@ function compareGraphIssues(a, b) {
     return priority_a - priority_b;
   }
   return String(a.id).localeCompare(String(b.id));
+}
+
+/**
+ * @param {unknown} issue_type
+ * @returns {'bug'|'feature'|'task'|'epic'|'chore'|'neutral'}
+ */
+function graphNodeType(issue_type) {
+  const value = String(issue_type || '').toLowerCase();
+  if (
+    value === 'bug' ||
+    value === 'feature' ||
+    value === 'task' ||
+    value === 'epic' ||
+    value === 'chore'
+  ) {
+    return value;
+  }
+  return 'neutral';
 }
