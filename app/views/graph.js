@@ -1,4 +1,8 @@
 import { html, render, svg } from 'lit-html';
+import {
+  filterIssuesByClosedFilter,
+  normalizeClosedFilter
+} from '../utils/closed-filter.js';
 import { debug } from '../utils/logging.js';
 
 const NODE_WIDTH = 220;
@@ -16,6 +20,7 @@ const MAX_SCALE = 2.5;
  *   status?: string,
  *   priority?: number,
  *   issue_type?: string,
+ *   closed_at?: number | null,
  *   dependencies?: unknown[],
  *   dependents?: unknown[],
  *   x?: number,
@@ -42,7 +47,7 @@ const MAX_SCALE = 2.5;
  * @param {HTMLElement} mount_element
  * @param {(id: string) => void} gotoIssue
  * @param {{ snapshotFor?: (client_id: string) => GraphIssue[], subscribe?: (fn: () => void) => () => void }} [issue_stores]
- * @param {{ getState?: () => { graph?: { show_closed?: boolean } }, setState?: (patch: { graph?: { show_closed?: boolean } }) => void, subscribe?: (fn: (state: unknown) => void) => () => void }} [store]
+ * @param {{ getState?: () => { board?: { closed_filter?: unknown } }, setState?: (patch: { board?: { closed_filter?: 'today'|'3'|'7' } }) => void, subscribe?: (fn: (state: unknown) => void) => () => void }} [store]
  * @returns {{ load: () => Promise<void>, clear: () => void, destroy: () => void }}
  */
 export function createGraphView(
@@ -60,7 +65,8 @@ export function createGraphView(
   let transform_state = { x: 24, y: 24, scale: 1 };
   /** @type {{ pointer_id: number, start_x: number, start_y: number, origin_x: number, origin_y: number } | null} */
   let active_pan = null;
-  let local_show_closed = true;
+  /** @type {'today'|'3'|'7'} */
+  let local_closed_filter = 'today';
   /** @type {null | (() => void)} */
   let unsubscribe_issues = null;
   /** @type {null | (() => void)} */
@@ -91,7 +97,7 @@ export function createGraphView(
   function template() {
     const issue_count = model.nodes.length;
     const edge_count = model.edges.length;
-    const show_closed = getShowClosed();
+    const closed_filter = getClosedFilter();
     return html`
       <div class="graph-root">
         <div class="graph-toolbar" aria-label="Graph controls">
@@ -101,13 +107,22 @@ export function createGraphView(
             <span class="muted">${edge_count} links</span>
           </div>
           <div class="graph-toolbar__actions">
-            <label class="graph-toggle">
-              <input
-                type="checkbox"
-                .checked=${show_closed}
-                @change=${onShowClosedChange}
-              />
-              <span>Show closed</span>
+            <label class="graph-closed-filter">
+              <span>Closed</span>
+              <select
+                aria-label="Filter closed issues"
+                @change=${onClosedFilterChange}
+              >
+                <option value="today" ?selected=${closed_filter === 'today'}>
+                  Today
+                </option>
+                <option value="3" ?selected=${closed_filter === '3'}>
+                  Last 3 days
+                </option>
+                <option value="7" ?selected=${closed_filter === '7'}>
+                  Last 7 days
+                </option>
+              </select>
             </label>
             <button type="button" @click=${zoomIn}>Zoom in</button>
             <button type="button" @click=${zoomOut}>Zoom out</button>
@@ -350,33 +365,37 @@ export function createGraphView(
   }
 
   function rebuildModel() {
-    model = buildGraphModel(filterClosedIssues(raw_issues, getShowClosed()));
+    model = buildGraphModel(
+      filterIssuesByClosedFilter(raw_issues, getClosedFilter())
+    );
   }
 
   /**
-   * @returns {boolean}
+   * @returns {'today'|'3'|'7'}
    */
-  function getShowClosed() {
+  function getClosedFilter() {
     const state =
       store && typeof store.getState === 'function'
         ? store.getState()
         : undefined;
-    return typeof state?.graph?.show_closed === 'boolean'
-      ? state.graph.show_closed
-      : local_show_closed;
+    return normalizeClosedFilter(
+      state && state.board ? state.board.closed_filter : local_closed_filter
+    );
   }
 
   /**
    * @param {Event} ev
    */
-  function onShowClosedChange(ev) {
-    const target = /** @type {HTMLInputElement | null} */ (ev.target);
-    const show_closed = Boolean(target?.checked);
+  function onClosedFilterChange(ev) {
+    const target = /** @type {HTMLSelectElement | null} */ (ev.target);
+    const closed_filter = normalizeClosedFilter(
+      target ? target.value : 'today'
+    );
     if (store && typeof store.setState === 'function') {
-      store.setState({ graph: { show_closed } });
+      store.setState({ board: { closed_filter } });
       return;
     }
-    local_show_closed = show_closed;
+    local_closed_filter = closed_filter;
     rebuildModel();
     doRender();
   }
@@ -510,18 +529,6 @@ export function buildGraphModel(issues) {
       NODE_HEIGHT +
       Math.max(0, max_layer_size - 1) * ROW_GAP
   };
-}
-
-/**
- * @param {GraphIssue[]} issues
- * @param {boolean} show_closed
- * @returns {GraphIssue[]}
- */
-function filterClosedIssues(issues, show_closed) {
-  if (show_closed) {
-    return issues.slice();
-  }
-  return issues.filter((issue) => String(issue.status || 'open') !== 'closed');
 }
 
 /**

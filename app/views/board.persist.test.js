@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { createSubscriptionIssueStore } from '../data/subscription-issue-store.js';
+import { createStore } from '../state.js';
 import { createBoardView } from './board.js';
 
 function createTestIssueStores() {
@@ -126,5 +127,50 @@ describe('views/board persisted closed filter via store', () => {
       mount.querySelectorAll('#closed-col .board-card')
     ).map((el) => el.getAttribute('data-issue-id'));
     expect(closed_ids).toEqual(['C', 'B']);
+  });
+
+  test('rerenders when shared closed filter changes externally', async () => {
+    document.body.innerHTML = '<div id="m"></div>';
+    const mount = /** @type {HTMLElement} */ (document.getElementById('m'));
+
+    const now = Date.now();
+    const one_day = 24 * 60 * 60 * 1000;
+
+    const issueStores = createTestIssueStores();
+    issueStores.getStore('tab:board:closed').applyPush({
+      type: 'snapshot',
+      id: 'tab:board:closed',
+      revision: 1,
+      issues: [
+        { id: 'A', closed_at: new Date(now - 2 * one_day).getTime() },
+        { id: 'B', closed_at: new Date(now).getTime() }
+      ]
+    });
+    const store = createStore({ board: { closed_filter: 'today' } });
+    const view = createBoardView(
+      mount,
+      null,
+      () => {},
+      store,
+      undefined,
+      issueStores
+    );
+    await view.load();
+
+    let closed_ids = Array.from(
+      mount.querySelectorAll('#closed-col .board-card')
+    ).map((el) => el.getAttribute('data-issue-id'));
+    expect(closed_ids).toEqual(['B']);
+
+    store.setState({ board: { closed_filter: '3' } });
+
+    const select = /** @type {HTMLSelectElement | null} */ (
+      mount.querySelector('#closed-filter')
+    );
+    closed_ids = Array.from(
+      mount.querySelectorAll('#closed-col .board-card')
+    ).map((el) => el.getAttribute('data-issue-id'));
+    expect(select?.value).toBe('3');
+    expect(closed_ids).toEqual(['B', 'A']);
   });
 });

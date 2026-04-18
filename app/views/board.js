@@ -1,6 +1,10 @@
 import { html, render } from 'lit-html';
 import { createListSelectors } from '../data/list-selectors.js';
 import { cmpClosedDesc, cmpPriorityThenCreated } from '../data/sort.js';
+import {
+  isClosedIssueVisibleForClosedFilter,
+  normalizeClosedFilter
+} from '../utils/closed-filter.js';
 import { createIssueIdRenderer } from '../utils/issue-id-renderer.js';
 import { debug } from '../utils/logging.js';
 import { createPriorityBadge } from '../utils/priority-badge.js';
@@ -83,11 +87,9 @@ export function createBoardView(
   if (store) {
     try {
       const s = store.getState();
-      const cf =
-        s && s.board ? String(s.board.closed_filter || 'today') : 'today';
-      if (cf === 'today' || cf === '3' || cf === '7') {
-        closed_filter_mode = /** @type {any} */ (cf);
-      }
+      closed_filter_mode = normalizeClosedFilter(
+        s && s.board ? s.board.closed_filter : 'today'
+      );
     } catch {
       // ignore store init errors
     }
@@ -517,32 +519,11 @@ export function createBoardView(
     log('applyClosedFilter %s', closed_filter_mode);
     /** @type {IssueLite[]} */
     let items = Array.isArray(list_closed_raw) ? [...list_closed_raw] : [];
-    const now = new Date();
-    let since_ts = 0;
-    if (closed_filter_mode === 'today') {
-      const start = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate(),
-        0,
-        0,
-        0,
-        0
-      );
-      since_ts = start.getTime();
-    } else if (closed_filter_mode === '3') {
-      since_ts = now.getTime() - 3 * 24 * 60 * 60 * 1000;
-    } else if (closed_filter_mode === '7') {
-      since_ts = now.getTime() - 7 * 24 * 60 * 60 * 1000;
-    }
     items = items.filter((it) => {
-      const s = Number.isFinite(it.closed_at)
-        ? /** @type {number} */ (it.closed_at)
-        : NaN;
-      if (!Number.isFinite(s)) {
-        return false;
-      }
-      return s >= since_ts;
+      return isClosedIssueVisibleForClosedFilter(
+        it.closed_at,
+        closed_filter_mode
+      );
     });
     items.sort(cmpClosedDesc);
     list_closed = items;
@@ -555,7 +536,7 @@ export function createBoardView(
     try {
       const el = /** @type {HTMLSelectElement} */ (ev.target);
       const v = String(el.value || 'today');
-      closed_filter_mode = v === '3' || v === '7' ? v : 'today';
+      closed_filter_mode = normalizeClosedFilter(v);
       log('closed filter %s', closed_filter_mode);
       if (store) {
         try {
@@ -622,6 +603,19 @@ export function createBoardView(
         refreshFromStores();
       } catch {
         // ignore
+      }
+    });
+  }
+
+  if (store && typeof store.subscribe === 'function') {
+    store.subscribe((s) => {
+      const next_closed_filter = normalizeClosedFilter(
+        s && s.board ? s.board.closed_filter : 'today'
+      );
+      if (next_closed_filter !== closed_filter_mode) {
+        closed_filter_mode = next_closed_filter;
+        applyClosedFilter();
+        doRender();
       }
     });
   }

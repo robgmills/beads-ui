@@ -191,20 +191,21 @@ describe('views/graph', () => {
     expect(after).toContain('scale(1.2)');
   });
 
-  test('renders closed issues when graph preference is enabled', async () => {
+  test('renders closed issues inside the shared range', async () => {
     document.body.innerHTML = '<div id="m"></div>';
     const mount = /** @type {HTMLElement} */ (document.getElementById('m'));
     const issueStores = createTestIssueStores();
+    const now = Date.now();
     issueStores.getStore('tab:graph').applyPush({
       type: 'snapshot',
       id: 'tab:graph',
       revision: 1,
       issues: [
         { id: 'UI-1', title: 'Open', status: 'open' },
-        { id: 'UI-2', title: 'Closed', status: 'closed' }
+        { id: 'UI-2', title: 'Closed', status: 'closed', closed_at: now }
       ]
     });
-    const store = createStore({ graph: { show_closed: true } });
+    const store = createStore({ board: { closed_filter: 'today' } });
     const view = createGraphView(mount, () => {}, issueStores, store);
 
     await view.load();
@@ -213,20 +214,27 @@ describe('views/graph', () => {
     expect(mount.textContent).toContain('UI-2');
   });
 
-  test('hides closed issues when graph preference is disabled', async () => {
+  test('hides closed issues outside the shared range', async () => {
     document.body.innerHTML = '<div id="m"></div>';
     const mount = /** @type {HTMLElement} */ (document.getElementById('m'));
     const issueStores = createTestIssueStores();
+    const now = Date.now();
+    const one_day = 24 * 60 * 60 * 1000;
     issueStores.getStore('tab:graph').applyPush({
       type: 'snapshot',
       id: 'tab:graph',
       revision: 1,
       issues: [
         { id: 'UI-1', title: 'Open', status: 'open' },
-        { id: 'UI-2', title: 'Closed', status: 'closed' }
+        {
+          id: 'UI-2',
+          title: 'Closed',
+          status: 'closed',
+          closed_at: now - 4 * one_day
+        }
       ]
     });
-    const store = createStore({ graph: { show_closed: false } });
+    const store = createStore({ board: { closed_filter: 'today' } });
     const view = createGraphView(mount, () => {}, issueStores, store);
 
     await view.load();
@@ -240,6 +248,8 @@ describe('views/graph', () => {
     document.body.innerHTML = '<div id="m"></div>';
     const mount = /** @type {HTMLElement} */ (document.getElementById('m'));
     const issueStores = createTestIssueStores();
+    const now = Date.now();
+    const one_day = 24 * 60 * 60 * 1000;
     issueStores.getStore('tab:graph').applyPush({
       type: 'snapshot',
       id: 'tab:graph',
@@ -250,6 +260,7 @@ describe('views/graph', () => {
           id: 'UI-2',
           title: 'Closed',
           status: 'closed',
+          closed_at: now - 4 * one_day,
           dependencies: [
             {
               issue_id: 'UI-2',
@@ -260,7 +271,7 @@ describe('views/graph', () => {
         }
       ]
     });
-    const store = createStore({ graph: { show_closed: false } });
+    const store = createStore({ board: { closed_filter: 'today' } });
     const view = createGraphView(mount, () => {}, issueStores, store);
 
     await view.load();
@@ -268,33 +279,92 @@ describe('views/graph', () => {
     expect(mount.querySelectorAll('.graph-edge').length).toBe(0);
   });
 
-  test('updates graph preference when toggling closed issues', async () => {
+  test('updates shared range when changing graph selector', async () => {
     document.body.innerHTML = '<div id="m"></div>';
     const mount = /** @type {HTMLElement} */ (document.getElementById('m'));
     const issueStores = createTestIssueStores();
+    const now = Date.now();
+    const one_day = 24 * 60 * 60 * 1000;
     issueStores.getStore('tab:graph').applyPush({
       type: 'snapshot',
       id: 'tab:graph',
       revision: 1,
       issues: [
         { id: 'UI-1', title: 'Open', status: 'open' },
-        { id: 'UI-2', title: 'Closed', status: 'closed' }
+        {
+          id: 'UI-2',
+          title: 'Closed',
+          status: 'closed',
+          closed_at: now - 2 * one_day
+        }
       ]
     });
-    const store = createStore({ graph: { show_closed: true } });
+    const store = createStore({ board: { closed_filter: 'today' } });
     const view = createGraphView(mount, () => {}, issueStores, store);
     await view.load();
 
-    const input = /** @type {HTMLInputElement | null} */ (
-      mount.querySelector('.graph-toggle input')
+    const select = /** @type {HTMLSelectElement | null} */ (
+      mount.querySelector('.graph-closed-filter select')
     );
-    if (input) {
-      input.checked = false;
-      input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (select) {
+      select.value = '3';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
-    expect(store.getState().graph.show_closed).toBe(false);
-    expect(mount.querySelectorAll('.graph-node').length).toBe(1);
+    expect(store.getState().board.closed_filter).toBe('3');
+    expect(mount.querySelectorAll('.graph-node').length).toBe(2);
+    expect(mount.textContent).toContain('UI-2');
+  });
+
+  test('renders shared selector instead of show closed checkbox', async () => {
+    document.body.innerHTML = '<div id="m"></div>';
+    const mount = /** @type {HTMLElement} */ (document.getElementById('m'));
+    const issueStores = createTestIssueStores();
+    const view = createGraphView(mount, () => {}, issueStores, createStore());
+
+    await view.load();
+
+    const checkbox = mount.querySelector('.graph-toggle input');
+    const options = Array.from(
+      mount.querySelectorAll('.graph-closed-filter option')
+    ).map((option) => option.textContent?.trim());
+
+    expect(checkbox).toBeNull();
+    expect(options).toEqual(['Today', 'Last 3 days', 'Last 7 days']);
+  });
+
+  test('rerenders when board closed filter changes externally', async () => {
+    document.body.innerHTML = '<div id="m"></div>';
+    const mount = /** @type {HTMLElement} */ (document.getElementById('m'));
+    const issueStores = createTestIssueStores();
+    const now = Date.now();
+    const one_day = 24 * 60 * 60 * 1000;
+    issueStores.getStore('tab:graph').applyPush({
+      type: 'snapshot',
+      id: 'tab:graph',
+      revision: 1,
+      issues: [
+        { id: 'UI-1', title: 'Open', status: 'open' },
+        {
+          id: 'UI-2',
+          title: 'Closed',
+          status: 'closed',
+          closed_at: now - 2 * one_day
+        }
+      ]
+    });
+    const store = createStore({ board: { closed_filter: 'today' } });
+    const view = createGraphView(mount, () => {}, issueStores, store);
+    await view.load();
+
     expect(mount.textContent).not.toContain('UI-2');
+
+    store.setState({ board: { closed_filter: '3' } });
+
+    const select = /** @type {HTMLSelectElement | null} */ (
+      mount.querySelector('.graph-closed-filter select')
+    );
+    expect(select?.value).toBe('3');
+    expect(mount.textContent).toContain('UI-2');
   });
 });

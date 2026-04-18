@@ -430,27 +430,10 @@ export function bootstrap(root_element) {
     } catch (err) {
       log('board prefs parse error: %o', err);
     }
-    // Load graph preferences
-    /** @type {{ show_closed: boolean }} */
-    let persistedGraph = { show_closed: true };
-    try {
-      const raw_graph = window.localStorage.getItem('beads-ui.graph');
-      if (raw_graph) {
-        const obj = JSON.parse(raw_graph);
-        if (obj && typeof obj === 'object') {
-          persistedGraph.show_closed =
-            typeof obj.show_closed === 'boolean' ? obj.show_closed : true;
-        }
-      }
-    } catch (err) {
-      log('graph prefs parse error: %o', err);
-    }
-
     const store = createStore({
       filters: persisted_filters,
       view: last_view,
-      board: persistedBoard,
-      graph: persistedGraph
+      board: persistedBoard
     });
     const router = createHashRouter(store);
     router.start();
@@ -542,13 +525,6 @@ export function bootstrap(root_element) {
       window.localStorage.setItem(
         'beads-ui.board',
         JSON.stringify({ closed_filter: s.board.closed_filter })
-      );
-    });
-    // Persist graph preferences
-    store.subscribe((s) => {
-      window.localStorage.setItem(
-        'beads-ui.graph',
-        JSON.stringify({ show_closed: s.graph.show_closed })
       );
     });
     void issues_view.load();

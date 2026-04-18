@@ -19,24 +19,25 @@ describe('state store', () => {
     expect(state.filters.status).toBe('open');
   });
 
-  test('defaults graph closed issues to visible', () => {
+  test('defaults closed filter to today', () => {
     const store = createStore();
 
     const state = store.getState();
 
-    expect(state.graph.show_closed).toBe(true);
+    expect(state.board.closed_filter).toBe('today');
   });
 
-  test('updates graph closed issues visibility', () => {
-    const store = createStore({ graph: { show_closed: true } });
+  test('updates closed filter and normalizes invalid values', () => {
+    const store = createStore({ board: { closed_filter: '7' } });
     const seen = [];
     const off = store.subscribe((s) => seen.push(s));
 
-    store.setState({ graph: { show_closed: false } });
-    store.setState({ graph: { show_closed: false } });
+    store.setState({ board: { closed_filter: '3' } });
+    store.setState({ board: { closed_filter: '3' } });
+    store.setState({ board: { closed_filter: /** @type {any} */ ('bad') } });
     off();
 
-    expect(seen.length).toBe(1);
-    expect(store.getState().graph.show_closed).toBe(false);
+    expect(seen.length).toBe(2);
+    expect(store.getState().board.closed_filter).toBe('today');
   });
 });
