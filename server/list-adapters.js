@@ -14,7 +14,7 @@ export function mapSubscriptionToBdArgs(spec) {
   const t = String(spec.type);
   switch (t) {
     case 'all-issues': {
-      return ['list', '--json', '--tree=false'];
+      return ['list', '--json', '--tree=false', '--all', '--limit', '0'];
     }
     case 'epics': {
       return ['epic', 'status', '--json'];
